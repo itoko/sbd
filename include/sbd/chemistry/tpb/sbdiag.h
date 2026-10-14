@@ -47,6 +47,18 @@ namespace sbd {
 
       std::string dump_matrix_form_wf;
 
+      // Phase 7b (fork-only): dump the diagonal of the half-determinant reduced
+      // density matrices, i.e. the marginal weights
+      //   w(a) = sum_b |c(a,b)|^2 ,  w(b) = sum_a |c(a,b)|^2 .
+      // These are already computed inside CarryOverAdet/CarryOverBdet but
+      // discarded. Writing them lets the caller rank half-determinants by CI
+      // weight without a second (much slower) diagonalization elsewhere.
+      // Output is in INPUT adet/bdet order (not sorted by weight), one value
+      // per line, so it lines up index-by-index with --adetfile / --bdetfile.
+      // Empty filename (the default) means no output and no behaviour change.
+      std::string dump_adet_weightfile;
+      std::string dump_bdet_weightfile;
+
 #ifdef SBD_THRUST
 	  bool use_precalculated_dets = true;
 	  int max_memory_gb_for_determinants = -1;
@@ -116,6 +128,13 @@ namespace sbd {
 	}
 	if( std::string(argv[i]) == "--dump_matrix_form_wf" ) {
 	  sbd_data.dump_matrix_form_wf = std::string(argv[++i]);
+	}
+	// Phase 7b (fork-only): see SBD::dump_adet_weightfile.
+	if( std::string(argv[i]) == "--dump_adet_weightfile" ) {
+	  sbd_data.dump_adet_weightfile = std::string(argv[++i]);
+	}
+	if( std::string(argv[i]) == "--dump_bdet_weightfile" ) {
+	  sbd_data.dump_bdet_weightfile = std::string(argv[++i]);
 	}
 #ifdef SBD_THRUST
 	if( std::string(argv[i]) == "--use_precalculated_dets" ) {
@@ -758,6 +777,56 @@ namespace sbd {
 	  */
 	}
 
+      }
+
+      /**
+	 Phase 7b (fork-only): dump the half-determinant marginal weights
+	   w(a) = sum_b |c(a,b)|^2 ,  w(b) = sum_a |c(a,b)|^2 .
+	 Same quantity CarryOverAdet/CarryOverBdet compute internally and then
+	 discard, and the same definition as --carryover_type 1 ranks by.
+	 Written in INPUT adet/bdet order (one value per line), so line i
+	 corresponds to line i of --adetfile / --bdetfile.
+
+	 NOTE: Diagonal{Adet,Bdet}ReducedDensityMatrix calls MPI_Comm_split and
+	 MpiAllreduce internally, so every rank in b_comm must enter it; only
+	 the writing is restricted to rank 0. This mirrors exactly how the
+	 CarryOverAdet/CarryOverBdet calls just below are invoked (same b_comm,
+	 same comm sizes), so the parallel semantics are the same as the
+	 already-working carryover path. Independent of carryover_type, so the
+	 weights can be obtained without enabling carryover selection.
+
+	 Verified with 1 rank (values match PySCF's marginal weights and the
+	 ranking is identical). Multi-rank was NOT exercised on the machine the
+	 patch was written on, because OpenMPI there cannot bind sockets; the
+	 first multi-rank run should re-check that w(a) sums to 1.
+       */
+      if( !sbd_data.dump_adet_weightfile.empty() ) {
+	std::vector<double> Wa;
+	sbd::DiagonalAdetReducedDensityMatrix(W,adet.size(),bdet.size(),
+					      adet_comm_size,bdet_comm_size,
+					      b_comm,Wa);
+	if( mpi_rank == 0 ) {
+	  std::ofstream ofs_wa(sbd_data.dump_adet_weightfile);
+	  ofs_wa.precision(16);
+	  for(size_t i=0; i < Wa.size(); i++) {
+	    ofs_wa << Wa[i] << std::endl;
+	  }
+	  ofs_wa.close();
+	}
+      }
+      if( !sbd_data.dump_bdet_weightfile.empty() ) {
+	std::vector<double> Wb;
+	sbd::DiagonalBdetReducedDensityMatrix(W,adet.size(),bdet.size(),
+					      adet_comm_size,bdet_comm_size,
+					      b_comm,Wb);
+	if( mpi_rank == 0 ) {
+	  std::ofstream ofs_wb(sbd_data.dump_bdet_weightfile);
+	  ofs_wb.precision(16);
+	  for(size_t i=0; i < Wb.size(); i++) {
+	    ofs_wb << Wb[i] << std::endl;
+	  }
+	  ofs_wb.close();
+	}
       }
 
       /**

@@ -106,6 +106,22 @@ Below is an explanation of each command-line option.
   Whether to compute the 1-particle and 2-particle reduced density matrices (1pRDM and 2pRDM). If set to 0, they are not computed; otherwise, they are computed.
 - `--bit_length <int>`:  
   Specifies the bit length handled by each size_t when representing bitstrings using `std::vector<size_t>`. The default value is 20.
+- `--dump_matrix_form_wf <str>`:  
+  Output file for the converged wavefunction in matrix form $c_{D^{\alpha},D^{\beta}}$.
+  With a `.bin` extension the coefficients are written as raw `double` values in row-major
+  (alpha-major) order, so the file is exactly `n_adet * n_bdet * 8` bytes.
+  With a `.dat` or `.txt` extension each line holds one coefficient followed by a `#` comment
+  giving the alpha/beta indices and bitstrings. If not specified, nothing is dumped.
+- `--dump_adet_weightfile <str>`, `--dump_bdet_weightfile <str>`:  
+  Output files for the marginal weights of the half-determinants,
+  $w(D^{\alpha}) = \sum_{D^{\beta}} \vert c_{D^{\alpha},D^{\beta}} \vert^2$ and likewise for $\beta$ —
+  i.e. the diagonal of the half-determinant reduced density matrix. These are the same
+  quantities that `--carryover_type 1` ranks by, which were previously computed internally
+  and then discarded. One value per line, in the **input** `--adetfile` / `--bdetfile` order
+  (*not* sorted by weight), so line *i* corresponds to line *i* of the input file. The values
+  sum to 1. Independent of `--carryover_type`, so the weights can be obtained without
+  enabling carryover selection. If not specified, nothing is dumped and the behaviour of the
+  app is unchanged.
 - `--cpu_subspace <int>`:
   GPU (Thrust) builds only. If set to 1, the subspace vectors of the Davidson or Lanczos solver are kept in CPU memory instead of GPU memory (default: 0).
   The Hamiltonian is still applied on the GPU: each vector is copied through two GPU buffers, so the GPU memory used by the subspace no longer grows with `--block`.
